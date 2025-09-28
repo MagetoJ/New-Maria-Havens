@@ -21,7 +21,7 @@ export function ReportsAnalytics() {
         <div className="text-center">
           <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-semibold">Access Restricted</h3>
-          <p className="text-muted-foreground">You don't have permission to view reports.</p>
+          <p className="text-muted-foreground">You don&apos;t have permission to view reports.</p>
         </div>
       </div>
     )

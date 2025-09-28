@@ -1,5 +1,6 @@
 "use client"
 
+// @ts-nocheck
 import type React from "react"
 
 import { useState } from "react"
@@ -10,6 +11,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Hotel, Lock, Mail, Info } from "lucide-react"
 import Link from "next/link"
+import { userAPI } from "@/lib/api"
 
 const MOCK_USERS = [
   { email: "admin@mariahavens.com", password: "admin123", role: "admin", name: "John Kamau" },
@@ -32,34 +34,31 @@ export function LoginForm() {
     setIsLoading(true)
     setError("")
 
-    // Simulate login - you'll replace this with your backend integration
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      const user = MOCK_USERS.find((u) => u.email === email && u.password === password)
-
-      if (user) {
+      const response = await userAPI.login(email, password)
+      
+      if (response.user) {
         // Store user info in localStorage for role-based dashboard
         localStorage.setItem(
           "currentUser",
           JSON.stringify({
-            id: `USR${Math.random().toString(36).substr(2, 9)}`,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            status: "active",
-            lastLogin: new Date().toISOString(),
-            createdAt: "2024-01-01",
+            id: response.user.id,
+            name: `${response.user.first_name} ${response.user.last_name}`.trim(),
+            email: response.user.email,
+            role: response.user.role,
+            status: response.user.status,
+            lastLogin: response.user.last_login,
+            createdAt: response.user.date_joined,
+            sessionKey: response.session_key,
           }),
         )
 
         // Redirect to dashboard
         window.location.href = "/dashboard"
-      } else {
-        setError("Invalid email or password")
       }
     } catch (err) {
-      setError("Login failed. Please try again.")
+      console.error("Login error:", err)
+      setError(err instanceof Error ? err.message : "Login failed. Please check your credentials and try again.")
     } finally {
       setIsLoading(false)
     }

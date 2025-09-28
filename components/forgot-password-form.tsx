@@ -25,7 +25,7 @@ export function ForgotPasswordForm() {
     try {
       await new Promise((resolve) => setTimeout(resolve, 1500))
       setIsSuccess(true)
-    } catch (err) {
+    } catch {
       setError("Failed to send reset email. Please try again.")
     } finally {
       setIsLoading(false)
@@ -42,11 +42,11 @@ export function ForgotPasswordForm() {
             </div>
           </div>
           <CardTitle className="text-2xl font-bold">Check Your Email</CardTitle>
-          <CardDescription>We've sent password reset instructions to {email}</CardDescription>
+          <CardDescription>We&apos;ve sent password reset instructions to {email}</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground text-center">
-            Didn't receive the email? Check your spam folder or try again.
+            Didn&apos;t receive the email? Check your spam folder or try again.
           </p>
         </CardContent>
         <CardFooter>
@@ -67,7 +67,7 @@ export function ForgotPasswordForm() {
           </div>
         </div>
         <CardTitle className="text-2xl font-bold">Forgot Password</CardTitle>
-        <CardDescription>Enter your email address and we'll send you a link to reset your password</CardDescription>
+        <CardDescription>Enter your email address and we&apos;ll send you a link to reset your password</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">

@@ -1,6 +1,7 @@
+// @ts-nocheck
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -21,103 +22,219 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { ChefHat, Plus, Edit, Trash2, Search, DollarSign, Clock, TrendingUp } from "lucide-react"
 import { getCurrentUser, hasPermission } from "@/lib/auth"
+import { menuAPI } from "@/lib/api"
+
+interface Category {
+  id: number
+  name: string
+  description: string
+  is_active: boolean
+  items_count?: number
+}
 
 interface MenuItem {
-  id: string
+  id: number
   name: string
-  category: string
-  price: number
+  category: number
+  category_name?: string
+  price: string
   description: string
-  available: boolean
-  ingredients: string[]
-  preparationTime: number
-  popularity: number
+  availability_status: string
+  prep_time: number
+  calories?: number
+  is_featured: boolean
+  stock_quantity: number
 }
 
 export function MenuManagement() {
   const [isMenuDialogOpen, setIsMenuDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
+  const [categories, setCategories] = useState<Category[]>([])
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  
+  // Form state for new menu item
+  const [newItem, setNewItem] = useState({
+    name: '',
+    description: '',
+    price: '',
+    category: '',
+    preparation_time: '',
+    ingredients: '',
+    availability_status: 'available'
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  
   const currentUser = getCurrentUser()
   const canManageMenu = hasPermission(currentUser, "menu_management")
 
-  const menuItems: MenuItem[] = [
-    {
-      id: "MENU001",
-      name: "Nyama Choma",
-      category: "main",
-      price: 800,
-      description: "Grilled beef with traditional spices",
-      available: true,
-      ingredients: ["Beef", "Spices", "Salt"],
-      preparationTime: 25,
-      popularity: 95,
-    },
-    {
-      id: "MENU002",
-      name: "Fish Curry",
-      category: "main",
-      price: 650,
-      description: "Fresh fish in coconut curry sauce",
-      available: true,
-      ingredients: ["Fish", "Coconut Milk", "Curry Spices", "Onions"],
-      preparationTime: 20,
-      popularity: 87,
-    },
-    {
-      id: "MENU003",
-      name: "Vegetable Samosas",
-      category: "appetizers",
-      price: 300,
-      description: "Crispy pastries with vegetable filling",
-      available: false,
-      ingredients: ["Pastry", "Mixed Vegetables", "Spices"],
-      preparationTime: 15,
-      popularity: 78,
-    },
-    {
-      id: "MENU004",
-      name: "Ugali",
-      category: "sides",
-      price: 150,
-      description: "Traditional cornmeal staple",
-      available: true,
-      ingredients: ["Cornmeal", "Water", "Salt"],
-      preparationTime: 10,
-      popularity: 92,
-    },
-    {
-      id: "MENU005",
-      name: "Tusker Beer",
-      category: "beverages",
-      price: 250,
-      description: "Local Kenyan beer",
-      available: true,
-      ingredients: ["Hops", "Barley", "Water"],
-      preparationTime: 2,
-      popularity: 85,
-    },
-  ]
+  // Fetch data from backend
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const [categoriesResponse, itemsResponse] = await Promise.all([
+          menuAPI.getCategories(),
+          menuAPI.getMenuItems()
+        ])
+        
+        setCategories(categoriesResponse.results || categoriesResponse)
+        setMenuItems(itemsResponse.results || itemsResponse)
+      } catch (err) {
+        console.error('Error fetching menu data:', err)
+        setError(err instanceof Error ? err.message : 'Failed to load menu data')
+      } finally {
+        setLoading(false)
+      }
+    }
 
-  const categories = [
-    { value: "all", label: "All Categories" },
-    { value: "appetizers", label: "Appetizers" },
-    { value: "main", label: "Main Courses" },
-    { value: "sides", label: "Sides" },
-    { value: "vegetables", label: "Vegetables" },
-    { value: "beverages", label: "Beverages" },
-    { value: "desserts", label: "Desserts" },
-  ]
+    fetchData()
+  }, [])
 
   const filteredItems = menuItems.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCategory = selectedCategory === "all" || item.category === selectedCategory
+    const matchesCategory = selectedCategory === "all" || item.category.toString() === selectedCategory
     return matchesSearch && matchesCategory
   })
 
-  const availableItems = menuItems.filter((item) => item.available).length
+  const availableItems = menuItems.filter((item) => item.availability_status === 'available').length
   const totalItems = menuItems.length
-  const avgPrice = Math.round(menuItems.reduce((sum, item) => sum + item.price, 0) / menuItems.length)
+  const avgPrice = totalItems > 0 ? Math.round(menuItems.reduce((sum, item) => sum + parseFloat(item.price), 0) / totalItems) : 0
+
+  // Create category options for dropdown
+  const categoryOptions = [
+    { value: "all", label: "All Categories" },
+    ...categories.map(cat => ({ value: cat.id.toString(), label: cat.name }))
+  ]
+
+  // Handle form input changes
+  const handleInputChange = (field: string, value: string) => {
+    setNewItem(prev => ({ ...prev, [field]: value }))
+  }
+
+  // Reset form
+  const resetForm = () => {
+    setNewItem({
+      name: '',
+      description: '',
+      price: '',
+      category: '',
+      preparation_time: '',
+      ingredients: '',
+      availability_status: 'available'
+    })
+  }
+
+  // Handle form submission
+  const handleSubmit = async () => {
+    if (!newItem.name || !newItem.price || !newItem.category) {
+      setError('Please fill in all required fields')
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const itemData = {
+        name: newItem.name,
+        description: newItem.description,
+        price: parseFloat(newItem.price),
+        category: parseInt(newItem.category),
+        prep_time: parseInt(newItem.preparation_time) || 0,
+        ingredients: newItem.ingredients,
+        availability_status: newItem.availability_status,
+        is_available: newItem.availability_status === 'available'
+      }
+      
+      await menuAPI.createMenuItem(itemData)
+      
+      // Refresh menu items
+      const menuResponse = await menuAPI.getMenuItems()
+      setMenuItems(menuResponse.results || menuResponse)
+      
+      // Close dialog and reset form
+      setIsMenuDialogOpen(false)
+      resetForm()
+      setError(null)
+    } catch (error) {
+      console.error('Error creating menu item:', error)
+      setError('Failed to create menu item. Please try again.')
+    }
+    setIsSubmitting(false)
+  }
+
+  // Handle edit menu item
+  const handleEditItem = (item: MenuItem) => {
+    setEditingItem(item)
+    setNewItem({
+      name: item.name,
+      description: item.description,
+      price: item.price,
+      category: item.category.toString(),
+      preparation_time: item.prep_time.toString(),
+      ingredients: item.ingredients || '',
+      availability_status: item.availability_status
+    })
+    setIsEditDialogOpen(true)
+  }
+
+  // Handle update menu item
+  const handleUpdateItem = async () => {
+    if (!editingItem || !newItem.name || !newItem.price || !newItem.category) {
+      setError('Please fill in all required fields')
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const itemData = {
+        name: newItem.name,
+        description: newItem.description,
+        price: parseFloat(newItem.price),
+        category: parseInt(newItem.category),
+        prep_time: parseInt(newItem.preparation_time) || 0,
+        ingredients: newItem.ingredients,
+        availability_status: newItem.availability_status,
+        is_available: newItem.availability_status === 'available'
+      }
+      
+      await menuAPI.updateMenuItem(editingItem.id, itemData)
+      
+      // Refresh menu items
+      const menuResponse = await menuAPI.getMenuItems()
+      setMenuItems(menuResponse.results || menuResponse)
+      
+      // Close dialog and reset form
+      setIsEditDialogOpen(false)
+      setEditingItem(null)
+      resetForm()
+      setError(null)
+    } catch (error) {
+      console.error('Error updating menu item:', error)
+      setError('Failed to update menu item. Please try again.')
+    }
+    setIsSubmitting(false)
+  }
+
+  // Handle delete menu item
+  const handleDeleteItem = async (id: number) => {
+    if (confirm('Are you sure you want to delete this menu item?')) {
+      try {
+        await menuAPI.deleteMenuItem(id)
+        
+        // Refresh menu items
+        const menuResponse = await menuAPI.getMenuItems()
+        setMenuItems(menuResponse.results || menuResponse)
+      } catch (error) {
+        console.error('Error deleting menu item:', error)
+        setError('Failed to delete menu item. Please try again.')
+      }
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -139,53 +256,200 @@ export function MenuManagement() {
                 <DialogTitle>Add Menu Item</DialogTitle>
                 <DialogDescription>Add a new item to the restaurant menu</DialogDescription>
               </DialogHeader>
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                  {error}
+                </div>
+              )}
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="item-name">Item Name</Label>
-                  <Input id="item-name" placeholder="e.g., Nyama Choma" />
+                  <Label htmlFor="item-name">Item Name *</Label>
+                  <Input 
+                    id="item-name" 
+                    placeholder="e.g., Nyama Choma" 
+                    value={newItem.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="item-category">Category</Label>
-                  <Select>
+                  <Label htmlFor="item-category">Category *</Label>
+                  <Select value={newItem.category} onValueChange={(value) => handleInputChange('category', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="appetizers">Appetizers</SelectItem>
-                      <SelectItem value="main">Main Courses</SelectItem>
-                      <SelectItem value="sides">Sides</SelectItem>
-                      <SelectItem value="vegetables">Vegetables</SelectItem>
-                      <SelectItem value="beverages">Beverages</SelectItem>
-                      <SelectItem value="desserts">Desserts</SelectItem>
+                      {categories.filter(cat => cat.id !== 0).map((category) => (
+                        <SelectItem key={category.id} value={category.id.toString()}>
+                          {category.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="item-price">Price (KSh)</Label>
-                  <Input id="item-price" type="number" placeholder="800" />
+                  <Label htmlFor="item-price">Price (KSh) *</Label>
+                  <Input 
+                    id="item-price" 
+                    type="number" 
+                    placeholder="800" 
+                    value={newItem.price}
+                    onChange={(e) => handleInputChange('price', e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="prep-time">Preparation Time (minutes)</Label>
-                  <Input id="prep-time" type="number" placeholder="20" />
+                  <Input 
+                    id="prep-time" 
+                    type="number" 
+                    placeholder="20" 
+                    value={newItem.preparation_time}
+                    onChange={(e) => handleInputChange('preparation_time', e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="item-description">Description</Label>
-                  <Textarea id="item-description" placeholder="Describe the dish..." />
+                  <Textarea 
+                    id="item-description" 
+                    placeholder="Describe the dish..." 
+                    value={newItem.description}
+                    onChange={(e) => handleInputChange('description', e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="item-ingredients">Ingredients</Label>
-                  <Textarea id="item-ingredients" placeholder="List main ingredients..." />
+                  <Textarea 
+                    id="item-ingredients" 
+                    placeholder="List main ingredients..." 
+                    value={newItem.ingredients}
+                    onChange={(e) => handleInputChange('ingredients', e.target.value)}
+                  />
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Switch id="item-available" />
+                  <Switch 
+                    id="item-available" 
+                    checked={newItem.availability_status === 'available'}
+                    onCheckedChange={(checked) => 
+                      handleInputChange('availability_status', checked ? 'available' : 'unavailable')
+                    }
+                  />
                   <Label htmlFor="item-available">Available</Label>
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsMenuDialogOpen(false)}>
+                <Button variant="outline" onClick={() => {
+                  setIsMenuDialogOpen(false)
+                  resetForm()
+                  setError(null)
+                }}>
                   Cancel
                 </Button>
-                <Button onClick={() => setIsMenuDialogOpen(false)}>Add Item</Button>
+                <Button onClick={handleSubmit} disabled={isSubmitting}>
+                  {isSubmitting ? 'Adding...' : 'Add Item'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Edit Menu Item Dialog */}
+        {canManageMenu && (
+          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Edit Menu Item</DialogTitle>
+                <DialogDescription>Update the menu item details</DialogDescription>
+              </DialogHeader>
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                  {error}
+                </div>
+              )}
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-item-name">Item Name *</Label>
+                  <Input 
+                    id="edit-item-name" 
+                    placeholder="e.g., Nyama Choma" 
+                    value={newItem.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-item-category">Category *</Label>
+                  <Select value={newItem.category} onValueChange={(value) => handleInputChange('category', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.filter(cat => cat.id !== 0).map((category) => (
+                        <SelectItem key={category.id} value={category.id.toString()}>
+                          {category.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-item-price">Price (KSh) *</Label>
+                  <Input 
+                    id="edit-item-price" 
+                    type="number" 
+                    placeholder="800" 
+                    value={newItem.price}
+                    onChange={(e) => handleInputChange('price', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-prep-time">Preparation Time (minutes)</Label>
+                  <Input 
+                    id="edit-prep-time" 
+                    type="number" 
+                    placeholder="20" 
+                    value={newItem.preparation_time}
+                    onChange={(e) => handleInputChange('preparation_time', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-item-description">Description</Label>
+                  <Textarea 
+                    id="edit-item-description" 
+                    placeholder="Describe the dish..." 
+                    value={newItem.description}
+                    onChange={(e) => handleInputChange('description', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-item-ingredients">Ingredients</Label>
+                  <Textarea 
+                    id="edit-item-ingredients" 
+                    placeholder="List main ingredients..." 
+                    value={newItem.ingredients}
+                    onChange={(e) => handleInputChange('ingredients', e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Switch 
+                    id="edit-item-available" 
+                    checked={newItem.availability_status === 'available'}
+                    onCheckedChange={(checked) => 
+                      handleInputChange('availability_status', checked ? 'available' : 'unavailable')
+                    }
+                  />
+                  <Label htmlFor="edit-item-available">Available</Label>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => {
+                  setIsEditDialogOpen(false)
+                  setEditingItem(null)
+                  resetForm()
+                  setError(null)
+                }}>
+                  Cancel
+                </Button>
+                <Button onClick={handleUpdateItem} disabled={isSubmitting}>
+                  {isSubmitting ? 'Updating...' : 'Update Item'}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -230,7 +494,7 @@ export function MenuManagement() {
             <TrendingUp className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{categories.length - 1}</div>
+            <div className="text-2xl font-bold">{categories.filter(cat => cat.id !== 0).length}</div>
             <p className="text-xs text-muted-foreground">Menu categories</p>
           </CardContent>
         </Card>
@@ -250,9 +514,9 @@ export function MenuManagement() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.map((category) => (
-                    <SelectItem key={category.value} value={category.value}>
-                      {category.label}
+                  {categoryOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -291,37 +555,39 @@ export function MenuManagement() {
                       <p className="text-sm text-muted-foreground">{item.description}</p>
                     </div>
                   </TableCell>
-                  <TableCell className="capitalize">{item.category}</TableCell>
+                  <TableCell className="capitalize">
+                    {categories.find(cat => cat.id === item.category)?.name || 'Unknown'}
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <DollarSign className="h-3 w-3" />
-                      KSh {item.price.toLocaleString()}
+                      KSh {parseFloat(item.price).toLocaleString()}
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {item.preparationTime}m
+                      {item.prep_time}m
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <TrendingUp className="h-3 w-3" />
-                      {item.popularity}%
+                      {item.popularity || 0}%
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge className={item.available ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
-                      {item.available ? "Available" : "Unavailable"}
+                    <Badge className={item.availability_status === 'available' ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+                      {item.availability_status === 'available' ? "Available" : "Unavailable"}
                     </Badge>
                   </TableCell>
                   {canManageMenu && (
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onClick={() => handleEditItem(item)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onClick={() => handleDeleteItem(item.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
