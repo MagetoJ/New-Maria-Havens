@@ -1,7 +1,7 @@
 "use client"
 
 // @ts-nocheck
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -21,38 +21,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
-import { Users, Plus, Edit, Trash2, Search, Shield, Hotel, UtensilsCrossed, Settings, Eye, EyeOff } from "lucide-react"
-import { getCurrentUser, hasPermission, ROLE_DESCRIPTIONS } from "@/lib/auth"
-
-interface User {
-  id: string
-  name: string
-  email: string
-  role: "admin" | "manager" | "receptionist" | "waiter" | "kitchen"
-  status: "active" | "inactive"
-  lastLogin: string
-  createdAt: string
-}
-
-interface Room {
-  id: string
-  number: string
-  type: "standard" | "deluxe" | "family" | "presidential"
-  status: "available" | "occupied" | "maintenance" | "cleaning"
-  price: number
-  maxGuests: number
-  amenities: string[]
-}
-
-interface MenuItem {
-  id: string
-  name: string
-  category: string
-  price: number
-  description: string
-  available: boolean
-  ingredients: string[]
-}
+import { Users, Plus, Edit, Trash2, Search, Shield, Hotel, UtensilsCrossed, Settings, Eye, EyeOff, Loader2 } from "lucide-react"
+import { getCurrentUser, hasPermission, ROLE_DESCRIPTIONS, Permission } from "@/lib/auth"
+import { userAPI, hotelAPI, menuAPI, User as ApiUser, MenuItem as ApiMenuItem, MenuItemData } from "@/lib/api"
+import { useToast } from "@/hooks/use-toast"
 
 export function AdminPortal() {
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false)
@@ -66,129 +38,148 @@ export function AdminPortal() {
   const canManageRooms = hasPermission(currentUser, "room_management")
   const canManageMenu = hasPermission(currentUser, "menu_management")
 
-  if (!canManageUsers) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-semibold">Access Restricted</h3>
-          <p className="text-muted-foreground">You don&apos;t have permission to access the admin portal.</p>
-          <p className="text-sm text-muted-foreground mt-2">
-            Current role: {ROLE_DESCRIPTIONS[currentUser.role].title}
-          </p>
-        </div>
-      </div>
-    )
+  // State for backend data
+  const [users, setUsers] = useState<ApiUser[]>([])
+  const [rooms, setRooms] = useState<any[]>([]) // Using any[] for now since Room interface is different from API type
+  const [menuItems, setMenuItems] = useState<ApiMenuItem[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  
+  const { toast } = useToast()
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const [usersResponse, roomsResponse, menuResponse] = await Promise.all([
+        userAPI.getDashboardStats(),
+        hotelAPI.getRooms(),
+        menuAPI.getMenuItems()
+      ]);
+
+      const usersRes = usersResponse as { data?: { users?: ApiUser[] } };
+      const roomsRes = roomsResponse as { data?: { results?: any[] } };
+      const menuRes = menuResponse as { data?: { results?: ApiMenuItem[] } };
+
+      if (usersRes.data) {
+        setUsers(usersRes.data.users || []);
+      }
+      if (roomsRes.data) {
+        setRooms(roomsRes.data.results || []);
+      }
+      if (menuRes.data) {
+        setMenuItems(menuRes.data.results || []);
+      }
+
+    } catch (err: any) {
+      console.error('Error fetching data:', err);
+      setError(err.message || "Failed to load data");
+      toast({
+        title: "Error",
+        description: err.message || "Failed to load data.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [canManageUsers, canManageRooms, canManageMenu]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // CRUD handlers (examples - replace with actual API calls later)
+  const handleAddUser = async (userData: any) => {
+    setLoading(true)
+    try {
+      // await userAPI.createUser(userData)
+      console.log("Mocking add user:", userData);
+      toast({
+        title: "Success",
+        description: "User added successfully. (Mocked)",
+      });
+      fetchData();
+    } catch (err: any) {
+      setError(err.message)
+      toast({
+        title: "Error",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false)
+      setIsUserDialogOpen(false)
+    }
   }
 
-  // Mock data - you'll replace this with real data from your backend
-  const users: User[] = [
-    {
-      id: "USR001",
-      name: "John Kamau",
-      email: "john.kamau@mariahavens.com",
-      role: "admin",
-      status: "active",
-      lastLogin: "2024-01-15 09:30",
-      createdAt: "2024-01-01",
-    },
-    {
-      id: "USR002",
-      name: "Sarah Wanjiku",
-      email: "sarah.w@mariahavens.com",
-      role: "manager",
-      status: "active",
-      lastLogin: "2024-01-15 08:45",
-      createdAt: "2024-01-02",
-    },
-    {
-      id: "USR003",
-      name: "David Ochieng",
-      email: "david.o@mariahavens.com",
-      role: "receptionist",
-      status: "active",
-      lastLogin: "2024-01-14 17:20",
-      createdAt: "2024-01-03",
-    },
-    {
-      id: "USR004",
-      name: "Grace Akinyi",
-      email: "grace.a@mariahavens.com",
-      role: "waiter",
-      status: "inactive",
-      lastLogin: "2024-01-10 14:15",
-      createdAt: "2024-01-04",
-    },
-  ]
+  const handleDeleteUser = async (userId: number) => {
+    if (!window.confirm("Are you sure you want to delete this user?")) return;
+    setLoading(true)
+    try {
+      // await userAPI.deleteUser(userId)
+      console.log("Mocking delete user:", userId);
+      toast({
+        title: "Success",
+        description: "User deleted successfully. (Mocked)",
+      });
+      fetchData();
+    } catch (err: any) {
+      setError(err.message)
+      toast({
+        title: "Error",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  const rooms: Room[] = [
-    {
-      id: "ROOM101",
-      number: "101",
-      type: "deluxe",
-      status: "occupied",
-      price: 7500,
-      maxGuests: 2,
-      amenities: ["AC", "WiFi", "TV", "Mini Bar", "Balcony"],
-    },
-    {
-      id: "ROOM102",
-      number: "102",
-      type: "deluxe",
-      status: "available",
-      price: 7500,
-      maxGuests: 2,
-      amenities: ["AC", "WiFi", "TV", "Mini Bar", "Balcony"],
-    },
-    {
-      id: "ROOM205",
-      number: "205",
-      type: "standard",
-      status: "cleaning",
-      price: 4000,
-      maxGuests: 2,
-      amenities: ["AC", "WiFi", "TV"],
-    },
-    {
-      id: "ROOM301",
-      number: "301",
-      type: "family",
-      status: "available",
-      price: 6000,
-      maxGuests: 4,
-      amenities: ["AC", "WiFi", "TV", "Kitchenette"],
-    },
-  ]
+  const handleAddRoom = async (roomData: any) => {
+    setLoading(true)
+    try {
+      // await hotelAPI.createRoom(roomData)
+      console.log("Mocking add room:", roomData);
+      toast({
+        title: "Success",
+        description: "Room added successfully. (Mocked)",
+      });
+      fetchData();
+    } catch (err: any) {
+      setError(err.message)
+      toast({
+        title: "Error",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false)
+      setIsRoomDialogOpen(false)
+    }
+  }
 
-  const menuItems: MenuItem[] = [
-    {
-      id: "MENU001",
-      name: "Nyama Choma",
-      category: "main",
-      price: 800,
-      description: "Grilled beef with traditional spices",
-      available: true,
-      ingredients: ["Beef", "Spices", "Salt"],
-    },
-    {
-      id: "MENU002",
-      name: "Fish Curry",
-      category: "main",
-      price: 650,
-      description: "Fresh fish in coconut curry sauce",
-      available: true,
-      ingredients: ["Fish", "Coconut Milk", "Curry Spices", "Onions"],
-    },
-    {
-      id: "MENU003",
-      name: "Vegetable Samosas",
-      category: "appetizers",
-      price: 300,
-      description: "Crispy pastries with vegetable filling",
-      available: false,
-      ingredients: ["Pastry", "Mixed Vegetables", "Spices"],
-    },
-  ]
+  const handleAddMenuItem = async (itemData: MenuItemData) => {
+    setLoading(true)
+    try {
+      // await menuAPI.createMenuItem(itemData)
+      console.log("Mocking add menu item:", itemData);
+      toast({
+        title: "Success",
+        description: "Menu item added successfully. (Mocked)",
+      });
+      fetchData();
+    } catch (err: any) {
+      setError(err.message)
+      toast({
+        title: "Error",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false)
+      setIsMenuDialogOpen(false)
+    }
+  }
 
   const getRoleColor = (role: string) => {
     switch (role) {
@@ -239,6 +230,30 @@ export function AdminPortal() {
     }
   }
 
+  if (!canManageUsers) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold">Access Restricted</h3>
+          <p className="text-muted-foreground">You don&apos;t have permission to access the admin portal.</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Current role: {ROLE_DESCRIPTIONS[currentUser.role]?.title}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2">Loading admin data...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -248,7 +263,7 @@ export function AdminPortal() {
         </div>
         <div className="flex items-center gap-2">
           <Shield className="h-5 w-5 text-primary" />
-          <span className="text-sm font-medium">{ROLE_DESCRIPTIONS[currentUser.role].title} Access</span>
+          <span className="text-sm font-medium">{ROLE_DESCRIPTIONS[currentUser.role]?.title} Access</span>
         </div>
       </div>
 
@@ -366,7 +381,7 @@ export function AdminPortal() {
                       <Button variant="outline" onClick={() => setIsUserDialogOpen(false)}>
                         Cancel
                       </Button>
-                      <Button onClick={() => setIsUserDialogOpen(false)}>Create User</Button>
+                      <Button onClick={() => handleAddUser({})}>Create User</Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -399,24 +414,24 @@ export function AdminPortal() {
                 <TableBody>
                   {users.map((user) => (
                     <TableRow key={user.id}>
-                      <TableCell className="font-medium">{user.name}</TableCell>
+                      <TableCell className="font-medium">{user.full_name}</TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Badge className={getRoleColor(user.role)}>{ROLE_DESCRIPTIONS[user.role].title}</Badge>
+                          <Badge className={getRoleColor(user.role)}>{ROLE_DESCRIPTIONS[user.role]?.title || user.role}</Badge>
                         </div>
                       </TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(user.status)}>{user.status}</Badge>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{user.lastLogin}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{user.last_login}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Button variant="outline" size="sm">
                             <Edit className="h-4 w-4" />
                           </Button>
                           {(user.role !== "admin" || currentUser.role === "admin") && (
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" onClick={() => handleDeleteUser(user.id as unknown as number)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           )}
@@ -487,7 +502,7 @@ export function AdminPortal() {
                         <Button variant="outline" onClick={() => setIsRoomDialogOpen(false)}>
                           Cancel
                         </Button>
-                        <Button onClick={() => setIsRoomDialogOpen(false)}>Add Room</Button>
+                        <Button onClick={() => handleAddRoom({})}>Add Room</Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
@@ -513,7 +528,7 @@ export function AdminPortal() {
                         <TableCell>
                           <Badge className={getStatusColor(room.status)}>{room.status}</Badge>
                         </TableCell>
-                        <TableCell>KSh {room.price.toLocaleString()}</TableCell>
+                        <TableCell>KSh {room.price?.toLocaleString() ?? room.price}</TableCell>
                         <TableCell>{room.maxGuests}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -552,7 +567,7 @@ export function AdminPortal() {
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
                       <DialogHeader>
-                        <DialogTitle>Add Menu Item</DialogTitle>
+                        <DialogTitle>Add New Menu Item</DialogTitle>
                         <DialogDescription>Add a new item to the restaurant menu</DialogDescription>
                       </DialogHeader>
                       <div className="grid gap-4 py-4">
@@ -597,7 +612,7 @@ export function AdminPortal() {
                         <Button variant="outline" onClick={() => setIsMenuDialogOpen(false)}>
                           Cancel
                         </Button>
-                        <Button onClick={() => setIsMenuDialogOpen(false)}>Add Item</Button>
+                        <Button onClick={() => handleAddMenuItem({ name: "New Item", description: "A new description", price: 100, category: 1, is_available: true })}>Add Item</Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
@@ -624,10 +639,10 @@ export function AdminPortal() {
                           </div>
                         </TableCell>
                         <TableCell className="capitalize">{item.category}</TableCell>
-                        <TableCell>KSh {item.price.toLocaleString()}</TableCell>
+                        <TableCell>KSh {item.price?.toLocaleString() ?? item.price}</TableCell>
                         <TableCell>
-                          <Badge className={item.available ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
-                            {item.available ? "Available" : "Unavailable"}
+                          <Badge className={item.is_available ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+                            {item.is_available ? "Available" : "Unavailable"}
                           </Badge>
                         </TableCell>
                         <TableCell>

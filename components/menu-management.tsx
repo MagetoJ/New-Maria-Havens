@@ -1,7 +1,7 @@
-// @ts-nocheck
 "use client"
 
-import { useState, useEffect } from "react"
+// @ts-nocheck
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -20,39 +20,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
-import { ChefHat, Plus, Edit, Trash2, Search, DollarSign, Clock, TrendingUp } from "lucide-react"
+import { ChefHat, Plus, Edit, Trash2, Search, DollarSign, Clock, TrendingUp, Loader2 } from "lucide-react"
 import { getCurrentUser, hasPermission } from "@/lib/auth"
-import { menuAPI } from "@/lib/api"
-
-interface Category {
-  id: number
-  name: string
-  description: string
-  is_active: boolean
-  items_count?: number
-}
-
-interface MenuItem {
-  id: number
-  name: string
-  category: number
-  category_name?: string
-  price: string
-  description: string
-  availability_status: string
-  prep_time: number
-  calories?: number
-  is_featured: boolean
-  stock_quantity: number
-}
+import { menuAPI, MenuItemData, Category, MenuItem as ApiMenuItem } from "@/lib/api"
+import { useToast } from "@/hooks/use-toast"
 
 export function MenuManagement() {
   const [isMenuDialogOpen, setIsMenuDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [categories, setCategories] = useState<Category[]>([])
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
-  const [, setLoading] = useState(true)
+  const [menuItems, setMenuItems] = useState<ApiMenuItem[]>([])
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
   // Form state for new menu item
@@ -61,60 +40,71 @@ export function MenuManagement() {
     description: '',
     price: '',
     category: '',
-    preparation_time: '',
+    prep_time: '',
     ingredients: '',
-    availability_status: 'available'
+    is_available: true
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
+  const [editingItem, setEditingItem] = useState<ApiMenuItem | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   
   const currentUser = getCurrentUser()
   const canManageMenu = hasPermission(currentUser, "menu_management")
+  
+  const { toast } = useToast()
 
-  // Fetch data from backend
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const [categoriesResponse, itemsResponse] = await Promise.all([
-          menuAPI.getCategories(),
-          menuAPI.getMenuItems()
-        ])
-        
-        setCategories(categoriesResponse.results || categoriesResponse)
-        setMenuItems(itemsResponse.results || itemsResponse)
-      } catch (err) {
-        console.error('Error fetching menu data:', err)
-        setError(err instanceof Error ? err.message : 'Failed to load menu data')
-      } finally {
-        setLoading(false)
-      }
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [categoriesResponse, itemsResponse] = await Promise.all([
+        menuAPI.getCategories(),
+        menuAPI.getMenuItems()
+      ]);
+
+      setCategories(categoriesResponse.data.results || []);
+      setMenuItems(itemsResponse.data.results || []);
+
+    } catch (err) {
+      console.error('Error fetching menu data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load menu data');
+      toast({
+        title: "Error",
+        description: error || "Failed to load data.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    fetchData()
-  }, [])
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const filteredItems = menuItems.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCategory = selectedCategory === "all" || item.category.toString() === selectedCategory
+    const matchesCategory = selectedCategory === "all" || item.category === parseInt(selectedCategory)
     return matchesSearch && matchesCategory
   })
 
-  const availableItems = menuItems.filter((item) => item.availability_status === 'available').length
+  const availableItems = menuItems.filter((item) => item.is_available).length
   const totalItems = menuItems.length
-  const avgPrice = totalItems > 0 ? Math.round(menuItems.reduce((sum, item) => sum + parseFloat(item.price), 0) / totalItems) : 0
+  const avgPrice = totalItems > 0 ? Math.round(menuItems.reduce((sum, item) => sum + parseFloat(String(item.price)), 0) / totalItems) : 0
 
   // Create category options for dropdown
   const categoryOptions = [
     { value: "all", label: "All Categories" },
-    ...categories.map(cat => ({ value: cat.id.toString(), label: cat.name }))
+    ...categories.map(cat => ({ value: String(cat.id), label: cat.name }))
   ]
 
   // Handle form input changes
   const handleInputChange = (field: string, value: string) => {
     setNewItem(prev => ({ ...prev, [field]: value }))
+  }
+  
+  const handleSwitchChange = (checked: boolean) => {
+    setNewItem(prev => ({ ...prev, is_available: checked }))
   }
 
   // Reset form
@@ -124,60 +114,69 @@ export function MenuManagement() {
       description: '',
       price: '',
       category: '',
-      preparation_time: '',
+      prep_time: '',
       ingredients: '',
-      availability_status: 'available'
+      is_available: true
     })
   }
 
   // Handle form submission
   const handleSubmit = async () => {
     if (!newItem.name || !newItem.price || !newItem.category) {
-      setError('Please fill in all required fields')
+      toast({
+        title: "Error",
+        description: 'Please fill in all required fields',
+        variant: "destructive",
+      });
       return
     }
 
     setIsSubmitting(true)
     try {
-      const itemData = {
+      const itemData: MenuItemData = {
         name: newItem.name,
         description: newItem.description,
         price: parseFloat(newItem.price),
         category: parseInt(newItem.category),
-        prep_time: parseInt(newItem.preparation_time) || 0,
+        prep_time: parseInt(newItem.prep_time) || 0,
         ingredients: newItem.ingredients,
-        availability_status: newItem.availability_status,
-        is_available: newItem.availability_status === 'available'
+        is_available: newItem.is_available,
+        availability_status: newItem.is_available ? 'available' : 'unavailable'
       }
       
       await menuAPI.createMenuItem(itemData)
       
-      // Refresh menu items
-      const menuResponse = await menuAPI.getMenuItems()
-      setMenuItems(menuResponse.results || menuResponse)
+      fetchData()
       
-      // Close dialog and reset form
       setIsMenuDialogOpen(false)
       resetForm()
-      setError(null)
+      toast({
+        title: "Success",
+        description: "Menu item created successfully.",
+      });
     } catch (error) {
       console.error('Error creating menu item:', error)
       setError('Failed to create menu item. Please try again.')
+      toast({
+        title: "Error",
+        description: 'Failed to create menu item. Please try again.',
+        variant: "destructive",
+      });
     }
     setIsSubmitting(false)
   }
 
   // Handle edit menu item
-  const handleEditItem = (item: MenuItem) => {
+  const handleEditItem = (item: ApiMenuItem) => {
     setEditingItem(item)
     setNewItem({
       name: item.name,
       description: item.description,
-      price: item.price,
-      category: item.category.toString(),
-      preparation_time: item.prep_time.toString(),
+      price: String(item.price),
+      category: String(item.category),
+      prep_time: String(item.prep_time || ''),
       ingredients: item.ingredients || '',
-      availability_status: item.availability_status
+      is_available: item.is_available
     })
     setIsEditDialogOpen(true)
   }
@@ -185,37 +184,46 @@ export function MenuManagement() {
   // Handle update menu item
   const handleUpdateItem = async () => {
     if (!editingItem || !newItem.name || !newItem.price || !newItem.category) {
-      setError('Please fill in all required fields')
+      toast({
+        title: "Error",
+        description: 'Please fill in all required fields',
+        variant: "destructive",
+      });
       return
     }
 
     setIsSubmitting(true)
     try {
-      const itemData = {
+      const itemData: Partial<MenuItemData> = {
         name: newItem.name,
         description: newItem.description,
         price: parseFloat(newItem.price),
         category: parseInt(newItem.category),
-        prep_time: parseInt(newItem.preparation_time) || 0,
+        prep_time: parseInt(newItem.prep_time) || 0,
         ingredients: newItem.ingredients,
-        availability_status: newItem.availability_status,
-        is_available: newItem.availability_status === 'available'
+        is_available: newItem.is_available,
+        availability_status: newItem.is_available ? 'available' : 'unavailable'
       }
       
       await menuAPI.updateMenuItem(editingItem.id, itemData)
       
-      // Refresh menu items
-      const menuResponse = await menuAPI.getMenuItems()
-      setMenuItems(menuResponse.results || menuResponse)
+      fetchData()
       
-      // Close dialog and reset form
       setIsEditDialogOpen(false)
       setEditingItem(null)
       resetForm()
-      setError(null)
+      toast({
+        title: "Success",
+        description: "Menu item updated successfully.",
+      });
     } catch (error) {
       console.error('Error updating menu item:', error)
       setError('Failed to update menu item. Please try again.')
+      toast({
+        title: "Error",
+        description: 'Failed to update menu item. Please try again.',
+        variant: "destructive",
+      });
     }
     setIsSubmitting(false)
   }
@@ -226,14 +234,42 @@ export function MenuManagement() {
       try {
         await menuAPI.deleteMenuItem(id)
         
-        // Refresh menu items
-        const menuResponse = await menuAPI.getMenuItems()
-        setMenuItems(menuResponse.results || menuResponse)
+        fetchData()
+        toast({
+          title: "Success",
+          description: "Menu item deleted successfully.",
+        });
       } catch (error) {
         console.error('Error deleting menu item:', error)
         setError('Failed to delete menu item. Please try again.')
+        toast({
+          title: "Error",
+          description: 'Failed to delete menu item. Please try again.',
+          variant: "destructive",
+        });
       }
     }
+  }
+
+  if (!canManageMenu) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <ChefHat className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold">Access Restricted</h3>
+          <p className="text-muted-foreground">You don&apos;t have permission to access menu management.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2">Loading menu data...</span>
+      </div>
+    );
   }
 
   return (
@@ -273,13 +309,13 @@ export function MenuManagement() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="item-category">Category *</Label>
-                  <Select value={newItem.category} onValueChange={(value) => handleInputChange('category', value)}>
+                  <Select value={String(newItem.category)} onValueChange={(value) => handleInputChange('category', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
                       {categories.filter(cat => cat.id !== 0).map((category) => (
-                        <SelectItem key={category.id} value={category.id.toString()}>
+                        <SelectItem key={category.id} value={String(category.id)}>
                           {category.name}
                         </SelectItem>
                       ))}
@@ -302,8 +338,8 @@ export function MenuManagement() {
                     id="prep-time" 
                     type="number" 
                     placeholder="20" 
-                    value={newItem.preparation_time}
-                    onChange={(e) => handleInputChange('preparation_time', e.target.value)}
+                    value={newItem.prep_time}
+                    onChange={(e) => handleInputChange('prep_time', e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -327,10 +363,8 @@ export function MenuManagement() {
                 <div className="flex items-center space-x-2">
                   <Switch 
                     id="item-available" 
-                    checked={newItem.availability_status === 'available'}
-                    onCheckedChange={(checked) => 
-                      handleInputChange('availability_status', checked ? 'available' : 'unavailable')
-                    }
+                    checked={newItem.is_available}
+                    onCheckedChange={handleSwitchChange}
                   />
                   <Label htmlFor="item-available">Available</Label>
                 </div>
@@ -350,8 +384,6 @@ export function MenuManagement() {
             </DialogContent>
           </Dialog>
         )}
-
-        {/* Edit Menu Item Dialog */}
         {canManageMenu && (
           <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
             <DialogContent className="max-w-md">
@@ -376,13 +408,13 @@ export function MenuManagement() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-item-category">Category *</Label>
-                  <Select value={newItem.category} onValueChange={(value) => handleInputChange('category', value)}>
+                  <Select value={String(newItem.category)} onValueChange={(value) => handleInputChange('category', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
                       {categories.filter(cat => cat.id !== 0).map((category) => (
-                        <SelectItem key={category.id} value={category.id.toString()}>
+                        <SelectItem key={category.id} value={String(category.id)}>
                           {category.name}
                         </SelectItem>
                       ))}
@@ -405,8 +437,8 @@ export function MenuManagement() {
                     id="edit-prep-time" 
                     type="number" 
                     placeholder="20" 
-                    value={newItem.preparation_time}
-                    onChange={(e) => handleInputChange('preparation_time', e.target.value)}
+                    value={newItem.prep_time}
+                    onChange={(e) => handleInputChange('prep_time', e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -430,10 +462,8 @@ export function MenuManagement() {
                 <div className="flex items-center space-x-2">
                   <Switch 
                     id="edit-item-available" 
-                    checked={newItem.availability_status === 'available'}
-                    onCheckedChange={(checked) => 
-                      handleInputChange('availability_status', checked ? 'available' : 'unavailable')
-                    }
+                    checked={newItem.is_available}
+                    onCheckedChange={handleSwitchChange}
                   />
                   <Label htmlFor="edit-item-available">Available</Label>
                 </div>
@@ -494,7 +524,7 @@ export function MenuManagement() {
             <TrendingUp className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{categories.filter(cat => cat.id !== 0).length}</div>
+            <div className="text-2xl font-bold">{categories.length}</div>
             <p className="text-xs text-muted-foreground">Menu categories</p>
           </CardContent>
         </Card>
@@ -561,7 +591,7 @@ export function MenuManagement() {
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <DollarSign className="h-3 w-3" />
-                      KSh {parseFloat(item.price).toLocaleString()}
+                      KSh {parseFloat(String(item.price)).toLocaleString()}
                     </div>
                   </TableCell>
                   <TableCell>

@@ -6,6 +6,18 @@ from rest_framework import filters
 from django.db.models import Q, Avg, Count, F
 from django.utils import timezone
 
+# backend/menu/views.py
+from rest_framework import viewsets
+from .models import MenuItem, Category
+from .serializers import MenuItemSerializer, CategorySerializer
+
+class MenuItemViewSet(viewsets.ModelViewSet):
+    queryset = MenuItem.objects.all()
+    serializer_class = MenuItemSerializer
+
+class CategoryViewSet(viewsets.ModelViewSet):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
 from .models import (
     Category, MenuItem, MenuItemVariation, MenuItemAddOn,
     MenuItemAddOnRelation, Recipe, RecipeIngredient, MenuDiscount

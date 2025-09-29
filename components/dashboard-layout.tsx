@@ -2,6 +2,7 @@
 
 // @ts-nocheck
 import type React from "react"
+import { useRouter } from "next/navigation"
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -56,10 +57,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const pathname = usePathname()
   const currentUser = getCurrentUser()
+  const router = useRouter()
 
   const filteredNavigation = navigation.filter(
     (item) => !item.permission || currentUser.permissions.includes(item.permission as Permission),
   )
+  
+  const handleLogout = () => {
+    // Clear user data from localStorage
+    localStorage.removeItem("currentUser");
+    // Redirect to the login page
+    router.push("/");
+  };
 
   const Sidebar = ({ mobile = false }: { mobile?: boolean }) => (
     <div className="flex h-full flex-col">
@@ -188,7 +197,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                       </Link>
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>
                   </DropdownMenuItem>
